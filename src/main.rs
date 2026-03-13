@@ -8,10 +8,12 @@ use csv::Writer;
 use regex::Regex;
 use serde::Serialize;
 use std::collections::HashMap;
+use std::env;
 use std::error::Error;
-use std::fs::File;
-use std::io::Write;
+use std::fs::{self, File};
+use std::io::{self, Write};
 use std::path::Path;
+use std::sync::{Arc, Mutex};
 use windows::core::{BSTR, Interface};
 use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_MULTITHREADED};
 use windows::Win32::System::Variant::VARIANT;
@@ -24,20 +26,95 @@ use windows::Win32::System::TaskScheduler::{
 };
 use wmi::{WMIConnection, Variant as WMIVariant};
 
-//=-- Output paths
-const CSV_TASKS_PATH: &str = r"C:\kworking\ScheduledTasksReport.csv";
-const TXT_SUSPICIOUS_TASKS_PATH: &str = r"C:\kworking\SuspiciousTasks.txt";
-const CSV_SERVICES_PATH: &str = r"C:\kworking\ServicesReport.csv";
-const TXT_SUSPICIOUS_SERVICES_PATH: &str = r"C:\kworking\SuspiciousServices.txt";
-const CSV_STARTUP_PATH: &str = r"C:\kworking\StartupCommandsReport.csv";
-const TXT_SUSPICIOUS_STARTUP_PATH: &str = r"C:\kworking\SuspiciousStartupCommands.txt";
-const CSV_PROCESSES_PATH: &str = r"C:\kworking\ProcessReport.csv";
-const CSV_LOGGEDON_PATH: &str = r"C:\kworking\LoggedOnUsers.csv";
+//=-- Output paths will be set dynamically at runtime
+static OUTPUT_DIR: Mutex<Option<String>> = Mutex::new(None);
+
+fn get_output_dir() -> String {
+    let guard = OUTPUT_DIR.lock().unwrap();
+    guard.as_ref().expect("Output directory not initialized").clone()
+}
+
+fn set_output_dir(dir: String) {
+    let mut guard = OUTPUT_DIR.lock().unwrap();
+    *guard = Some(dir);
+}
+
+fn get_output_paths() -> (String, String, String, String, String, String, String, String, String, String, String) {
+    let dir = get_output_dir();
+    let log_path = format!(r"{}\gator-log.txt", dir);
+    let csv_tasks = format!(r"{}\ScheduledTasksReport.csv", dir);
+    let txt_suspicious_tasks = format!(r"{}\SuspiciousTasks.txt", dir);
+    let csv_services = format!(r"{}\ServicesReport.csv", dir);
+    let txt_suspicious_services = format!(r"{}\SuspiciousServices.txt", dir);
+    let csv_startup = format!(r"{}\StartupCommandsReport.csv", dir);
+    let txt_suspicious_startup = format!(r"{}\SuspiciousStartupCommands.txt", dir);
+    let csv_processes = format!(r"{}\ProcessReport.csv", dir);
+    let csv_loggedon = format!(r"{}\LoggedOnUsers.csv", dir);
+    let csv_drivers = format!(r"{}\DriversReport.csv", dir);
+    let txt_suspicious_drivers = format!(r"{}\SuspiciousDrivers.txt", dir);
+    
+    (log_path, csv_tasks, txt_suspicious_tasks, csv_services, txt_suspicious_services, 
+     csv_startup, txt_suspicious_startup, csv_processes, csv_loggedon, csv_drivers, txt_suspicious_drivers)
+}
+
+/// Determine output directory: try local folder first, fallback to ProgramData
+fn determine_output_directory() -> Result<String, Box<dyn Error>> {
+    //=-- Try current directory first
+    let current_dir = env::current_dir()?;
+    let test_file = current_dir.join(".write_test");
+    
+    //=-- Test if we can write to current directory
+    match fs::write(&test_file, "test") {
+        Ok(_) => {
+            //=-- Can write locally, clean up test file
+            let _ = fs::remove_file(&test_file);
+            return Ok(current_dir.to_string_lossy().to_string());
+        }
+        Err(_) => {
+            //=-- Cannot write locally, use ProgramData fallback
+            let program_data = env::var("ProgramData")
+                .unwrap_or_else(|_| r"C:\ProgramData".to_string());
+            let fallback_path = format!(r"{}\ITGH\Investi-Gator", program_data);
+            fs::create_dir_all(&fallback_path)?;
+            return Ok(fallback_path);
+        }
+    }
+}
+
+//=-- Tee writer that writes to both stdout and a log file
+struct TeeWriter {
+    log_file: Arc<Mutex<File>>,
+}
+
+impl TeeWriter {
+    fn new(log_path: &str) -> io::Result<Self> {
+        let file = File::create(log_path)?;
+        Ok(TeeWriter {
+            log_file: Arc::new(Mutex::new(file)),
+        })
+    }
+    
+    fn writeln(&self, s: &str) {
+        println!("{}", s);
+        if let Ok(mut file) = self.log_file.lock() {
+            let _ = writeln!(file, "{}", s);
+        }
+    }
+}
+
+impl Clone for TeeWriter {
+    fn clone(&self) -> Self {
+        TeeWriter {
+            log_file: Arc::clone(&self.log_file),
+        }
+    }
+}
 
 //=-- Suspicious patterns
 const SUSPICIOUS_TASK_PATTERN: &str = r"cmd\.exe|powershell\.exe|wscript\.exe|cscript\.exe|mshta\.exe|bitsadmin\.exe|certutil\.exe";
 const SUSPICIOUS_SERVICE_PATTERN: &str = r"AppData|Temp|ProgramData|PerfLogs|Users\\Public";
 const SUSPICIOUS_STARTUP_PATTERN: &str = r"AppData\\Local\\Temp|\\Temp\\|\`\`\`|\\\\[a-zA-Z0-9]|\\\\\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}";
+const SUSPICIOUS_DRIVER_PATTERN: &str = r"AppData|Temp|ProgramData|PerfLogs|Users\\Public";
 
 //=-- ==========================================================================
 //=-- DATA STRUCTURES
@@ -139,17 +216,50 @@ struct LoggedOnUserInfo {
     start_time: String,
 }
 
+#[derive(Debug, Serialize)]
+struct DriverInfo {
+    #[serde(rename = "Name")]
+    name: String,
+    #[serde(rename = "DisplayName")]
+    display_name: String,
+    #[serde(rename = "PathName")]
+    path_name: String,
+    #[serde(rename = "Status")]
+    status: String,
+    #[serde(rename = "State")]
+    state: String,
+    #[serde(rename = "StartMode")]
+    start_mode: String,
+    #[serde(rename = "AcceptStop")]
+    accept_stop: bool,
+    #[serde(rename = "ServiceType")]
+    service_type: String,
+}
+
 //=-- ==========================================================================
 //=-- MAIN
 //=-- ==========================================================================
 
 fn main() -> Result<(), Box<dyn Error>> {
-    println!("========================================");
-    println!("   🐊 Investi-Gator System Reporter 🐊");
-    println!("========================================\n");
+    //=-- Determine output directory
+    let output_dir = determine_output_directory()?;
+    set_output_dir(output_dir.clone());
+    
+    //=-- Get all output paths
+    let (log_path, csv_tasks, txt_suspicious_tasks, csv_services, txt_suspicious_services,
+         csv_startup, txt_suspicious_startup, csv_processes, csv_loggedon, csv_drivers, txt_suspicious_drivers) = get_output_paths();
+    
+    //=-- Create TeeWriter for logging to both console and file
+    let tee = TeeWriter::new(&log_path)?;
+    
+    tee.writeln("========================================");
+    tee.writeln("   🐊 Investi-Gator System Reporter 🐊");
+    tee.writeln("========================================");
+    tee.writeln(&format!("Output directory: {}", output_dir));
+    tee.writeln("");
 
     //=-- Ensure output directory exists
-    ensure_output_directory()?;
+    ensure_output_directory(&output_dir)?;
 
     //=-- Initialize COM for Task Scheduler
     unsafe {
@@ -160,105 +270,129 @@ fn main() -> Result<(), Box<dyn Error>> {
     let wmi_con = WMIConnection::new()?;
 
     //=-- 1. Scheduled Tasks Report
-    println!("🐊 [1/6] Lurking for scheduled tasks...");
+    tee.writeln("🐊 [1/7] Lurking for scheduled tasks...");
     match gather_scheduled_tasks() {
         Ok(tasks) => {
-            if let Err(e) = export_tasks_to_csv(&tasks, CSV_TASKS_PATH) {
-                eprintln!("  Error exporting tasks to CSV: {}", e);
+            if let Err(e) = export_tasks_to_csv(&tasks, &csv_tasks) {
+                tee.writeln(&format!("  Error exporting tasks to CSV: {}", e));
             } else {
-                println!("  Exported {} tasks to {}", tasks.len(), CSV_TASKS_PATH);
+                tee.writeln(&format!("  Exported {} tasks to {}", tasks.len(), csv_tasks));
             }
-            match export_suspicious_tasks(&tasks, TXT_SUSPICIOUS_TASKS_PATH) {
-                Ok(count) => println!("  Exported {} suspicious tasks to {}", count, TXT_SUSPICIOUS_TASKS_PATH),
-                Err(e) => eprintln!("  Error exporting suspicious tasks: {}", e),
+            match export_suspicious_tasks(&tasks, &txt_suspicious_tasks) {
+                Ok(count) => tee.writeln(&format!("  Exported {} suspicious tasks to {}", count, txt_suspicious_tasks)),
+                Err(e) => tee.writeln(&format!("  Error exporting suspicious tasks: {}", e)),
             }
         }
-        Err(e) => eprintln!("  Error gathering scheduled tasks: {}", e),
+        Err(e) => tee.writeln(&format!("  Error gathering scheduled tasks: {}", e)),
     }
 
     //=-- 2. Services Report
-    println!("\n🐊 [2/6] Snapping up services...");
+    tee.writeln("");
+    tee.writeln("🐊 [2/7] Snapping up services...");
     match gather_services(&wmi_con) {
         Ok(services) => {
-            if let Err(e) = export_services_to_csv(&services, CSV_SERVICES_PATH) {
-                eprintln!("  Error exporting services to CSV: {}", e);
+            if let Err(e) = export_services_to_csv(&services, &csv_services) {
+                tee.writeln(&format!("  Error exporting services to CSV: {}", e));
             } else {
-                println!("  Exported {} services to {}", services.len(), CSV_SERVICES_PATH);
+                tee.writeln(&format!("  Exported {} services to {}", services.len(), csv_services));
             }
-            match export_suspicious_services(&services, TXT_SUSPICIOUS_SERVICES_PATH) {
-                Ok(count) => println!("  Exported {} suspicious services to {}", count, TXT_SUSPICIOUS_SERVICES_PATH),
-                Err(e) => eprintln!("  Error exporting suspicious services: {}", e),
+            match export_suspicious_services(&services, &txt_suspicious_services) {
+                Ok(count) => tee.writeln(&format!("  Exported {} suspicious services to {}", count, txt_suspicious_services)),
+                Err(e) => tee.writeln(&format!("  Error exporting suspicious services: {}", e)),
             }
         }
-        Err(e) => eprintln!("  Error gathering services: {}", e),
+        Err(e) => tee.writeln(&format!("  Error gathering services: {}", e)),
     }
 
     //=-- 3. Startup Commands Report
-    println!("\n🐊 [3/6] Chomping through startup commands...");
+    tee.writeln("");
+    tee.writeln("🐊 [3/7] Chomping through startup commands...");
     match gather_startup_commands(&wmi_con) {
         Ok(commands) => {
-            if let Err(e) = export_startup_to_csv(&commands, CSV_STARTUP_PATH) {
-                eprintln!("  Error exporting startup commands to CSV: {}", e);
+            if let Err(e) = export_startup_to_csv(&commands, &csv_startup) {
+                tee.writeln(&format!("  Error exporting startup commands to CSV: {}", e));
             } else {
-                println!("  Exported {} startup commands to {}", commands.len(), CSV_STARTUP_PATH);
+                tee.writeln(&format!("  Exported {} startup commands to {}", commands.len(), csv_startup));
             }
-            match export_suspicious_startup(&commands, TXT_SUSPICIOUS_STARTUP_PATH) {
-                Ok(count) => println!("  Exported {} suspicious startup commands to {}", count, TXT_SUSPICIOUS_STARTUP_PATH),
-                Err(e) => eprintln!("  Error exporting suspicious startup: {}", e),
+            match export_suspicious_startup(&commands, &txt_suspicious_startup) {
+                Ok(count) => tee.writeln(&format!("  Exported {} suspicious startup commands to {}", count, txt_suspicious_startup)),
+                Err(e) => tee.writeln(&format!("  Error exporting suspicious startup: {}", e)),
             }
         }
-        Err(e) => eprintln!("  Error gathering startup commands: {}", e),
+        Err(e) => tee.writeln(&format!("  Error gathering startup commands: {}", e)),
     }
 
     //=-- 4. Processes Report
-    println!("\n🐊 [4/6] Hunting down processes...");
+    tee.writeln("");
+    tee.writeln("🐊 [4/7] Hunting down processes...");
     match gather_processes(&wmi_con) {
         Ok(processes) => {
-            if let Err(e) = export_processes_to_csv(&processes, CSV_PROCESSES_PATH) {
-                eprintln!("  Error exporting processes to CSV: {}", e);
+            if let Err(e) = export_processes_to_csv(&processes, &csv_processes) {
+                tee.writeln(&format!("  Error exporting processes to CSV: {}", e));
             } else {
-                println!("  Exported {} processes to {}", processes.len(), CSV_PROCESSES_PATH);
+                tee.writeln(&format!("  Exported {} processes to {}", processes.len(), csv_processes));
             }
         }
-        Err(e) => eprintln!("  Error gathering processes: {}", e),
+        Err(e) => tee.writeln(&format!("  Error gathering processes: {}", e)),
     }
 
     //=-- 5. Logged-On Users Report
-    println!("\n🐊 [5/6] Spying on logged-on users...");
+    tee.writeln("");
+    tee.writeln("🐊 [5/7] Spying on logged-on users...");
     match gather_logged_on_users(&wmi_con) {
         Ok(users) => {
             let filtered = filter_users(users)?;
-            if let Err(e) = export_users_to_csv(&filtered, CSV_LOGGEDON_PATH) {
-                eprintln!("  Error exporting users to CSV: {}", e);
+            if let Err(e) = export_users_to_csv(&filtered, &csv_loggedon) {
+                tee.writeln(&format!("  Error exporting users to CSV: {}", e));
             } else {
-                println!("  Exported {} users to {}", filtered.len(), CSV_LOGGEDON_PATH);
+                tee.writeln(&format!("  Exported {} users to {}", filtered.len(), csv_loggedon));
             }
         }
-        Err(e) => eprintln!("  Error gathering logged-on users: {}", e),
+        Err(e) => tee.writeln(&format!("  Error gathering logged-on users: {}", e)),
     }
 
     //=-- 6. System Uptime
-    println!("\n🐊 [6/6] Measuring swamp uptime...");
+    tee.writeln("");
+    tee.writeln("🐊 [6/7] Measuring swamp uptime...");
     match calculate_uptime(&wmi_con) {
         Ok((uptime, boot_time)) => {
-            println!(
+            tee.writeln(&format!(
                 "  System Uptime: {} days, {} hours, {} minutes",
                 uptime.num_days(),
                 uptime.num_hours() % 24,
                 uptime.num_minutes() % 60
-            );
-            println!("  Last Boot Time: {}", boot_time.format("%Y-%m-%d %H:%M:%S"));
+            ));
+            tee.writeln(&format!("  Last Boot Time: {}", boot_time.format("%Y-%m-%d %H:%M:%S")));
         }
-        Err(e) => eprintln!("  Error calculating uptime: {}", e),
+        Err(e) => tee.writeln(&format!("  Error calculating uptime: {}", e)),
+    }
+
+    //=-- 7. Drivers Report
+    tee.writeln("");
+    tee.writeln("🐊 [7/7] Creeping on kernel drivers...");
+    match gather_drivers(&wmi_con) {
+        Ok(drivers) => {
+            if let Err(e) = export_drivers_to_csv(&drivers, &csv_drivers) {
+                tee.writeln(&format!("  Error exporting drivers to CSV: {}", e));
+            } else {
+                tee.writeln(&format!("  Exported {} drivers to {}", drivers.len(), csv_drivers));
+            }
+            match export_suspicious_drivers(&drivers, &txt_suspicious_drivers) {
+                Ok(count) => tee.writeln(&format!("  Exported {} suspicious drivers to {}", count, txt_suspicious_drivers)),
+                Err(e) => tee.writeln(&format!("  Error exporting suspicious drivers: {}", e)),
+            }
+        }
+        Err(e) => tee.writeln(&format!("  Error gathering drivers: {}", e)),
     }
 
     //=-- Cleanup - WMI connection is dropped here automatically
     //=-- Don't call CoUninitialize() manually as it causes segfault when WMIConnection still exists
     //=-- The OS will clean up COM when the process exits
 
-    println!("\n========================================");
-    println!("   🐊 Investi-Gator has snapped! 🐊");
-    println!("========================================");
+    tee.writeln("");
+    tee.writeln("========================================");
+    tee.writeln("   🐊 Investi-Gator has snapped! 🐊");
+    tee.writeln("========================================");
 
     Ok(())
 }
@@ -267,19 +401,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 //=-- UTILITY FUNCTIONS
 //=-- ==========================================================================
 
-fn ensure_output_directory() -> Result<(), Box<dyn Error>> {
-    let paths = [
-        CSV_TASKS_PATH, TXT_SUSPICIOUS_TASKS_PATH,
-        CSV_SERVICES_PATH, TXT_SUSPICIOUS_SERVICES_PATH,
-        CSV_STARTUP_PATH, TXT_SUSPICIOUS_STARTUP_PATH,
-        CSV_PROCESSES_PATH, CSV_LOGGEDON_PATH,
-    ];
-
-    for path in &paths {
-        if let Some(parent) = Path::new(path).parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-    }
+fn ensure_output_directory(output_dir: &str) -> Result<(), Box<dyn Error>> {
+    fs::create_dir_all(output_dir)?;
     Ok(())
 }
 
@@ -803,4 +926,68 @@ fn calculate_uptime(wmi_con: &WMIConnection) -> Result<(Duration, DateTime<Utc>)
     } else {
         Err("No operating system information found".into())
     }
+}
+
+//=-- ==========================================================================
+//=-- DRIVERS FUNCTIONS
+//=-- ==========================================================================
+
+fn gather_drivers(wmi_con: &WMIConnection) -> Result<Vec<DriverInfo>, Box<dyn Error>> {
+    let query = "SELECT Name, DisplayName, PathName, Status, State, StartMode, AcceptStop, ServiceType FROM Win32_SystemDriver";
+    let results: Vec<HashMap<String, WMIVariant>> = wmi_con.raw_query(query)?;
+
+    let mut drivers = Vec::new();
+
+    for result in results {
+        let path_name = variant_to_string(result.get("PathName"));
+        //=-- Clean up path - remove device path prefix if present
+        let clean_path = if path_name.starts_with("\\??\\") {
+            path_name[4..].to_string()
+        } else {
+            path_name
+        };
+
+        drivers.push(DriverInfo {
+            name: variant_to_string(result.get("Name")),
+            display_name: variant_to_string(result.get("DisplayName")),
+            path_name: clean_path,
+            status: variant_to_string(result.get("Status")),
+            state: variant_to_string(result.get("State")),
+            start_mode: variant_to_string(result.get("StartMode")),
+            accept_stop: matches!(variant_to_u32(result.get("AcceptStop")), 1),
+            service_type: variant_to_string(result.get("ServiceType")),
+        });
+    }
+
+    Ok(drivers)
+}
+
+fn export_drivers_to_csv(drivers: &[DriverInfo], path: &str) -> Result<(), Box<dyn Error>> {
+    let mut writer = Writer::from_path(path)?;
+    for driver in drivers {
+        writer.serialize(driver)?;
+    }
+    writer.flush()?;
+    Ok(())
+}
+
+fn export_suspicious_drivers(drivers: &[DriverInfo], path: &str) -> Result<usize, Box<dyn Error>> {
+    let suspicious_regex = Regex::new(SUSPICIOUS_DRIVER_PATTERN)?;
+
+    let suspicious_drivers: Vec<_> = drivers
+        .iter()
+        .filter(|d| suspicious_regex.is_match(&d.path_name))
+        .collect();
+
+    let mut file = File::create(path)?;
+    for driver in &suspicious_drivers {
+        writeln!(file, "Name: {}", driver.name)?;
+        writeln!(file, "DisplayName: {}", driver.display_name)?;
+        writeln!(file, "PathName: {}", driver.path_name)?;
+        writeln!(file, "State: {}", driver.state)?;
+        writeln!(file, "StartMode: {}", driver.start_mode)?;
+        writeln!(file)?;
+    }
+
+    Ok(suspicious_drivers.len())
 }
