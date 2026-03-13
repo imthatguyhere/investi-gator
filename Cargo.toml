@@ -21,31 +21,3 @@ wmi = "0.18.3"
 [profile.release]
 opt-level = 3
 lto = true
-
-[[bin]]
-name = "scheduled-tasks-reporter"
-path = "src/main.rs"
-
-[[bin]]
-name = "services-reporter"
-path = "src/services_main.rs"
-
-[[bin]]
-name = "startup-commands-reporter"
-path = "src/startup_main.rs"
-
-[[bin]]
-name = "process-reporter"
-path = "src/process_main.rs"
-
-[[bin]]
-name = "logged-on-users-reporter"
-path = "src/loggedon_main.rs"
-
-[[bin]]
-name = "system-uptime-reporter"
-path = "src/uptime_main.rs"
-
-[[bin]]
-name = "unified-reporter"
-path = "src/unified_main.rs"
