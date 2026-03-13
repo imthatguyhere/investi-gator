@@ -42,16 +42,16 @@ fn set_output_dir(dir: String) {
 fn get_output_paths() -> (String, String, String, String, String, String, String, String, String, String, String) {
     let dir = get_output_dir();
     let log_path = format!(r"{}\gator-log.txt", dir);
-    let csv_tasks = format!(r"{}\ScheduledTasksReport.csv", dir);
-    let txt_suspicious_tasks = format!(r"{}\SuspiciousTasks.txt", dir);
-    let csv_services = format!(r"{}\ServicesReport.csv", dir);
-    let txt_suspicious_services = format!(r"{}\SuspiciousServices.txt", dir);
-    let csv_startup = format!(r"{}\StartupCommandsReport.csv", dir);
-    let txt_suspicious_startup = format!(r"{}\SuspiciousStartupCommands.txt", dir);
-    let csv_processes = format!(r"{}\ProcessReport.csv", dir);
-    let csv_loggedon = format!(r"{}\LoggedOnUsers.csv", dir);
-    let csv_drivers = format!(r"{}\DriversReport.csv", dir);
-    let txt_suspicious_drivers = format!(r"{}\SuspiciousDrivers.txt", dir);
+    let csv_tasks = format!(r"{}\Task--Report.csv", dir);
+    let txt_suspicious_tasks = format!(r"{}\Task--Suspicious.txt", dir);
+    let csv_services = format!(r"{}\Service--Report.csv", dir);
+    let txt_suspicious_services = format!(r"{}\Service--Suspicious.txt", dir);
+    let csv_startup = format!(r"{}\Startup--Report.csv", dir);
+    let txt_suspicious_startup = format!(r"{}\Startup--Suspicious.txt", dir);
+    let csv_processes = format!(r"{}\Process--Report.csv", dir);
+    let csv_loggedon = format!(r"{}\Users--Report.csv", dir);
+    let csv_drivers = format!(r"{}\Driver--Report.csv", dir);
+    let txt_suspicious_drivers = format!(r"{}\Driver--Suspicious.txt", dir);
     
     (log_path, csv_tasks, txt_suspicious_tasks, csv_services, txt_suspicious_services, 
      csv_startup, txt_suspicious_startup, csv_processes, csv_loggedon, csv_drivers, txt_suspicious_drivers)
