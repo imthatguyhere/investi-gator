@@ -12,7 +12,6 @@ use std::env;
 use std::error::Error;
 use std::fs::{self, File};
 use std::io::{self, Write};
-use std::path::Path;
 use std::sync::{Arc, Mutex};
 use windows::core::{BSTR, Interface};
 use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_MULTITHREADED};
@@ -273,7 +272,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     //=-- Create TeeWriter for logging to both console and file
     let tee = TeeWriter::new(&log_path)?;
 
-    //=-- Initialize COM for Task Scheduler
+    tee.writeln("========================================");
+    tee.writeln("   🐊 Investi-Gator System Reporter 🐊");
+    tee.writeln("========================================");
+    tee.writeln("  Made by Imthatguyhere (ITGH | Tyler)");
+    tee.writeln("");
+    tee.writeln(&format!("Output directory: {}", output_dir));
+    tee.writeln("");
     unsafe {
         CoInitializeEx(None, COINIT_MULTITHREADED).ok()?;
     }
