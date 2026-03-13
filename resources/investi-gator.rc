@@ -1,0 +1,4 @@
+//=-- Investi-Gator Windows Resource File
+//=-- Embeds the alligator icon into the executable
+
+IDI_ICON1 ICON "resources/investi-gator.ico"

@@ -1,6 +1,7 @@
-//=-- unified-reporter
-//=-- A comprehensive system reporter combining scheduled tasks, services,
-//=-- startup commands, processes, logged-on users, and system uptime
+//=-- Investi-Gator - The Alligator System Reporter
+//=-- "Snap!" - A comprehensive system reporter combining scheduled tasks,
+//=-- services, startup commands, processes, logged-on users, and system uptime
+//=-- Just like an alligator lurks in the waters, this tool lurks in your system!
 
 use chrono::{DateTime, Duration, NaiveDate, TimeZone, Utc};
 use csv::Writer;
@@ -144,7 +145,7 @@ struct LoggedOnUserInfo {
 
 fn main() -> Result<(), Box<dyn Error>> {
     println!("========================================");
-    println!("    Unified System Reporter");
+    println!("   🐊 Investi-Gator System Reporter 🐊");
     println!("========================================\n");
 
     //=-- Ensure output directory exists
@@ -159,7 +160,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let wmi_con = WMIConnection::new()?;
 
     //=-- 1. Scheduled Tasks Report
-    println!("[1/6] Gathering scheduled tasks...");
+    println!("🐊 [1/6] Lurking for scheduled tasks...");
     match gather_scheduled_tasks() {
         Ok(tasks) => {
             if let Err(e) = export_tasks_to_csv(&tasks, CSV_TASKS_PATH) {
@@ -176,7 +177,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     //=-- 2. Services Report
-    println!("\n[2/6] Gathering services...");
+    println!("\n🐊 [2/6] Snapping up services...");
     match gather_services(&wmi_con) {
         Ok(services) => {
             if let Err(e) = export_services_to_csv(&services, CSV_SERVICES_PATH) {
@@ -193,7 +194,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     //=-- 3. Startup Commands Report
-    println!("\n[3/6] Gathering startup commands...");
+    println!("\n🐊 [3/6] Chomping through startup commands...");
     match gather_startup_commands(&wmi_con) {
         Ok(commands) => {
             if let Err(e) = export_startup_to_csv(&commands, CSV_STARTUP_PATH) {
@@ -210,7 +211,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     //=-- 4. Processes Report
-    println!("\n[4/6] Gathering processes...");
+    println!("\n🐊 [4/6] Hunting down processes...");
     match gather_processes(&wmi_con) {
         Ok(processes) => {
             if let Err(e) = export_processes_to_csv(&processes, CSV_PROCESSES_PATH) {
@@ -223,7 +224,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     //=-- 5. Logged-On Users Report
-    println!("\n[5/6] Gathering logged-on users...");
+    println!("\n🐊 [5/6] Spying on logged-on users...");
     match gather_logged_on_users(&wmi_con) {
         Ok(users) => {
             let filtered = filter_users(users)?;
@@ -237,7 +238,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     //=-- 6. System Uptime
-    println!("\n[6/6] Calculating system uptime...");
+    println!("\n🐊 [6/6] Measuring swamp uptime...");
     match calculate_uptime(&wmi_con) {
         Ok((uptime, boot_time)) => {
             println!(
@@ -256,7 +257,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     //=-- The OS will clean up COM when the process exits
 
     println!("\n========================================");
-    println!("    All reports completed!");
+    println!("   🐊 Investi-Gator has snapped! 🐊");
     println!("========================================");
 
     Ok(())
