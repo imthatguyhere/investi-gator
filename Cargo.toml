@@ -45,3 +45,7 @@ path = "src/loggedon_main.rs"
 [[bin]]
 name = "system-uptime-reporter"
 path = "src/uptime_main.rs"
+
+[[bin]]
+name = "unified-reporter"
+path = "src/unified_main.rs"
