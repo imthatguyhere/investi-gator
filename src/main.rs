@@ -250,7 +250,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let hour_12 = if hour == 0 { 12 } else if hour > 12 { hour - 12 } else { hour };
     let am_pm = if hour >= 12 { "pm" } else { "am" };
     let subfolder = format!(
-        "chomp--{}-{}-{}--{}-{}-{}-{}",
+        "chomp--{}-{}-{}--{}-{}-{:02}-{}",
         timestamp.year(),
         timestamp.month(),
         timestamp.day(),
