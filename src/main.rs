@@ -3,7 +3,7 @@
 //=-- services, startup commands, processes, logged-on users, and system uptime
 //=-- Just like an alligator lurks in the waters, this tool lurks in your system!
 
-use chrono::{DateTime, Duration, NaiveDate, TimeZone, Utc};
+use chrono::{DateTime, Duration, NaiveDate, TimeZone, Utc, Datelike, Timelike};
 use csv::Writer;
 use regex::Regex;
 use serde::Serialize;
@@ -241,9 +241,30 @@ struct DriverInfo {
 //=-- ==========================================================================
 
 fn main() -> Result<(), Box<dyn Error>> {
-    //=-- Determine output directory
-    let output_dir = determine_output_directory()?;
+    //=-- Determine base output directory (local or ProgramData)
+    let base_dir = determine_output_directory()?;
+    
+    //=-- Create timestamped subfolder: chomp--YYYY-MM-DD--H-MM-SS-am/pm
+    let timestamp = chrono::Local::now().naive_local();
+    let hour = timestamp.hour();
+    let hour_12 = if hour == 0 { 12 } else if hour > 12 { hour - 12 } else { hour };
+    let am_pm = if hour >= 12 { "pm" } else { "am" };
+    let subfolder = format!(
+        "chomp--{}-{}-{}--{}-{}-{}-{}",
+        timestamp.year(),
+        timestamp.month(),
+        timestamp.day(),
+        hour_12,
+        timestamp.minute(),
+        timestamp.second(),
+        am_pm
+    );
+    let output_dir = format!(r"{}\{}", base_dir, subfolder);
+    
     set_output_dir(output_dir.clone());
+    
+    //=-- Ensure output directory exists BEFORE creating TeeWriter
+    ensure_output_directory(&output_dir)?;
     
     //=-- Get all output paths
     let (log_path, csv_tasks, txt_suspicious_tasks, csv_services, txt_suspicious_services,
@@ -251,15 +272,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     
     //=-- Create TeeWriter for logging to both console and file
     let tee = TeeWriter::new(&log_path)?;
-    
-    tee.writeln("========================================");
-    tee.writeln("   🐊 Investi-Gator System Reporter 🐊");
-    tee.writeln("========================================");
-    tee.writeln(&format!("Output directory: {}", output_dir));
-    tee.writeln("");
-
-    //=-- Ensure output directory exists
-    ensure_output_directory(&output_dir)?;
 
     //=-- Initialize COM for Task Scheduler
     unsafe {
