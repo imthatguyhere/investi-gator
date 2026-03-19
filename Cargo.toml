@@ -1,6 +1,6 @@
 [package]
 name = "investi-gator"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 
 [dependencies]
@@ -19,7 +19,7 @@ regex = "1.10"
 wmi = "0.18.3"
 
 [build-dependencies]
-embed-resource = "2.4"
+embed-resource = "3.0.7"
 
 [profile.release]
 opt-level = "z" #=-- Optimize for size.
