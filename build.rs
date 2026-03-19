@@ -5,6 +5,6 @@ fn main() {
     //=-- Compile Windows resource file (only on Windows)
     #[cfg(windows)]
     {
-        embed_resource::compile("resources/investi-gator.rc", embed_resource::NONE);
+        let _ = embed_resource::compile("resources/investi-gator.rc", embed_resource::NONE);
     }
 }

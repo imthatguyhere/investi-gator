@@ -205,7 +205,7 @@ Everything you see on screen is also saved to `gator-log.txt` inside the chomp f
 ## 🐊 Tech Stack — What's Under the Scales
 
 | Crate | What It Does |
-| ------- | ------------- |
+| ----- | ------------ |
 | `windows` | Native Win32 API bindings for COM and Task Scheduler |
 | `wmi` | WMI queries for services, processes, users, uptime, startup commands, and drivers |
 | `chrono` | Timestamp generation and datetime parsing |
@@ -213,6 +213,45 @@ Everything you see on screen is also saved to `gator-log.txt` inside the chomp f
 | `serde` | Struct serialization with custom field name mapping |
 | `regex` | Pattern matching for suspicious entry detection |
 | `embed-resource` | Embeds the gator icon into the executable at build time |
+
+## 🐊 Code Architecture — The Gator's Anatomy
+
+The codebase is organized into a clean modular structure. Each system report type lives in its own file under `src/types/`, while `main.rs` orchestrates the flow like a gator circling its prey.
+
+### Project Structure
+
+```txt
+src/
+├── main.rs           # Orchestration layer - just coordinates the chomp
+├── utils.rs          # Shared utilities (WMI helpers, path cleaners, time formatters)
+└── types/
+    ├── mod.rs        # Module exports + suspicious pattern constants
+    ├── tasks.rs      # ScheduledTask struct + gather/export functions
+    ├── services.rs   # ServiceInfo struct + gather/export functions
+    ├── startup.rs    # StartupCommandInfo struct + gather/export functions
+    ├── processes.rs  # ProcessInfo struct + gather/export functions
+    ├── users.rs      # LoggedOnUserInfo struct + gather/export functions
+    ├── drivers.rs    # DriverInfo struct + gather/export functions
+    └── uptime.rs     # Uptime calculation function
+```
+
+### Module Design
+
+Each type module follows a consistent pattern:
+
+- **Data struct**: Serde-annotated struct defining the report schema
+- **`gather_*` function**: Queries the system (WMI or COM APIs) and returns a `Vec<Struct>`
+- **`export_*_to_csv` function**: Serializes full data to CSV
+- **`export_suspicious_*` function**: Filters by regex patterns, writes human-readable text
+
+Suspicious regex patterns are centralized in `types/mod.rs` as constants:
+
+- `SUSPICIOUS_TASK_PATTERN` — Living-off-the-land binaries
+- `SUSPICIOUS_SERVICE_PATTERN` — Unusual service paths
+- `SUSPICIOUS_STARTUP_PATTERN` — Temp paths, obfuscation, UNC paths
+- `SUSPICIOUS_DRIVER_PATTERN` — Unusual driver paths
+
+`main.rs` remains lean (~250 lines) — it handles output directory selection, initializes the `TeeWriter` for dual console/file logging, initializes COM/WMI, then simply calls each module's public API in sequence. The refactoring makes the codebase easier to maintain, test, and extend with new report types.
 
 ---
 
