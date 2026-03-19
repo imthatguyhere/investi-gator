@@ -8,11 +8,11 @@ use std::error::Error;
 use std::fs::File;
 use std::io::Write;
 use windows::core::{BSTR, Interface};
-use windows::Win32::System::Com::CoCreateInstance;
+use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_ALL};
 use windows::Win32::System::TaskScheduler::{
     IActionCollection, IComHandlerAction, IExecAction, IPrincipal, IRegisteredTask,
     IRegistrationInfo, ITaskDefinition, ITaskFolder, ITaskService, ITriggerCollection,
-    TASK_ACTION_COM_HANDLER, TASK_ACTION_EXEC, TASK_ENUM_HIDDEN, TASK_RUNLEVEL_TYPE,
+    TASK_ACTION_COM_HANDLER, TASK_ACTION_EXEC, TASK_ACTION_TYPE, TASK_ENUM_HIDDEN, TASK_RUNLEVEL_TYPE,
     TASK_TRIGGER_TYPE2,
 };
 use windows::Win32::System::Variant::VARIANT;
@@ -44,8 +44,6 @@ pub struct ScheduledTask {
 }
 
 pub fn gather_scheduled_tasks() -> Result<Vec<ScheduledTask>, Box<dyn Error>> {
-    use windows::Win32::System::Com::CLSCTX_ALL;
-
     let mut tasks = Vec::new();
 
     unsafe {
@@ -148,8 +146,6 @@ unsafe fn extract_task_info(
 }
 
 unsafe fn format_actions(actions: &IActionCollection) -> Result<String, Box<dyn Error>> {
-    use windows::Win32::System::TaskScheduler::TASK_ACTION_TYPE;
-
     let mut count: i32 = 0;
     actions.Count(&mut count)?;
     let mut action_strings = Vec::new();
