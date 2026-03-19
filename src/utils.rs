@@ -39,7 +39,7 @@ pub fn ensure_output_directory(output_dir: &str) -> Result<(), Box<dyn Error>> {
 
 /// Clean up path by removing \\?\ prefix
 pub fn clean_path(path: &str) -> String {
-    path.replace(r"\\?\", "")
+    path.strip_prefix(r"\\?\").unwrap_or(path).to_string()
 }
 
 /// Convert BSTR to String
