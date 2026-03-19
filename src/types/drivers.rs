@@ -1,6 +1,6 @@
 //=-- Kernel Drivers module
 use crate::types::SUSPICIOUS_DRIVER_PATTERN;
-use crate::utils::{variant_to_string, variant_to_u32};
+use crate::utils::{clean_path, variant_to_string, variant_to_u32};
 use csv::Writer;
 use regex::Regex;
 use serde::Serialize;
@@ -38,17 +38,12 @@ pub fn gather_drivers(wmi_con: &WMIConnection) -> Result<Vec<DriverInfo>, Box<dy
 
     for result in results {
         let path_name = variant_to_string(result.get("PathName"));
-        //=-- Clean up path - remove device path prefix if present
-        let clean_path = if path_name.starts_with("\\??\\") {
-            path_name[4..].to_string()
-        } else {
-            path_name
-        };
+        let clean_path_name = clean_path(&path_name);
 
         drivers.push(DriverInfo {
             name: variant_to_string(result.get("Name")),
             display_name: variant_to_string(result.get("DisplayName")),
-            path_name: clean_path,
+            path_name: clean_path_name,
             status: variant_to_string(result.get("Status")),
             state: variant_to_string(result.get("State")),
             start_mode: variant_to_string(result.get("StartMode")),
