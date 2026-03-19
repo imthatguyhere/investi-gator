@@ -39,16 +39,8 @@ pub fn gather_processes(wmi_con: &WMIConnection) -> Result<Vec<ProcessInfo>, Box
         let command_line = clean_path(&raw_cmdline);
 
         let creation_date = variant_to_string(result.get("CreationDate"));
-        let start_time = if !creation_date.is_empty() && creation_date.len() >= 14 {
-            format!(
-                "{}-{}-{} {}:{}:{}",
-                &creation_date[0..4],
-                &creation_date[4..6],
-                &creation_date[6..8],
-                &creation_date[8..10],
-                &creation_date[10..12],
-                &creation_date[12..14]
-            )
+        let start_time = if let Some(dt) = crate::utils::parse_wmi_datetime(&creation_date) {
+            dt.format("%Y-%m-%d %H:%M:%S").to_string()
         } else {
             creation_date
         };
